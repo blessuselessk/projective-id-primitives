@@ -1,10 +1,10 @@
 ---
-title: "Entropy Projection Framework"
+title: "EPF Kernel"
 version: "0.1.0-draft"
 status: "pre-RFC"
 ---
 
-# Entropy Projection Framework
+# EPF Kernel
 
 <!--raw-typst
 // ── Page & typography setup ───────────────────────────────────────────────────
@@ -43,7 +43,7 @@ status: "pre-RFC"
 
 <!--typst-begin-exclude-->
 > **Status:** Pre-RFC Draft · v0.1.0
-> A deterministic entropy → cross-domain design primitive projection engine.
+> The kernel of the Entropy Projection Framework — a deterministic entropy → cross-domain design primitive engine.
 >
 > **Rendering this document**
 >
@@ -284,35 +284,26 @@ interface PrimitiveField {
 `PrimitiveField` is closed over raw entropy — it contains only normalized,
 clamped values. No kernel method is accessible from within it.
 
----
+### scalar · bits · angle · vec2 · pick · flag
 
-## Primitive Vocabulary
+The six primitive draw methods. Each produces a single deterministic value from
+a keyed region of the expanded keystream.
 
-Abstract names that carry no rendering assumptions. Adapters are solely responsible
-for interpretation. Names are lowercase kebab-case. The vocabulary is versioned
-alongside the kernel spec.
+| Method | Return | Range | Notes |
+|--------|--------|-------|-------|
+| `scalar(key)` | `number` | [0, 1] | Uniform draw — workhorse of the vocabulary |
+| `bits(key, n)` | `number` | [0, 2ⁿ−1] | Raw integer — implementation escape hatch |
+| `angle(key)` | `number` | [0, 2π] | Uniform on the circle |
+| `vec2(key)` | `[number, number]` | unit square | Two independent scalar draws |
+| `pick(key, options)` | `T` | — | Uniform categorical selection |
+| `flag(key)` | `boolean` | — | Single bit draw |
 
-| Primitive | Type | Range | Semantic Intent |
-|-----------|------|-------|----------------|
-| `density` | scalar | [0, 1] | Mass and weight of visual elements |
-| `expansion` | scalar | [0, 1] | Lateral spread and spatial openness |
-| `curvature` | scalar | [0, 1] | Roundness and organic quality |
-| `contrast` | scalar | [0, 1] | Differential between figure and ground |
-| `grain` | scalar | [0, 1] | Fine-grained micro-variation and texture |
-| `tension` | scalar | [0, 1] | Structural tightness and compression |
-| `symmetry` | scalar | [0, 1] | Axial balance and alignment bias |
-| `phase` | angle | [0, 2π] | Harmonic offset and rotational position |
-| `feature-*` | flag | bool | Binary toggle — sequenced (`feature-1`) or named (`feature-italic`) |
-| `normal-offset` | normal | [-1, 1] | Gaussian-distributed lateral or baseline offset |
-| `normal-weight` | normal | [-1, 1] | Gaussian-distributed weight deviation from center |
-| `seq-*` | sequence | number[] ∈ [0,1] | n independent domain-separated scalars under one key |
-| `parts-*` | partition | number[] summing to 1 | n parts for proportional layout and distribution |
-| `order-*` | shuffle / sample | unknown[] | Full permutation or k-of-n selection without replacement |
+`bits` is the only method that returns raw entropy without semantic normalization.
+It exists for implementors who need access below the primitive layer. Adapters
+that find themselves reaching for `bits` should consider whether a new named
+method is the correct abstraction instead.
 
-`order-*` entries are not listed in the vocabulary table as their element type
-and length are adapter-defined. See [Shuffle](#shuffle) below.
-
-### Normal
+### normal
 
 `normal(key, mean?, std?)` produces a gaussian-distributed scalar. The default
 distribution is mean `0`, std `1`, clamped to `[-1, 1]`. Callers may supply
@@ -329,7 +320,9 @@ kernel.normal("weight", 0, 0.5)   // N(0, 0.5) — tighter distribution
 kernel.normal("shift", 0.2, 0.3)  // N(0.2, 0.3) — shifted center
 ```
 
-### Shuffle
+Stored on `PrimitiveField` under `normal-${key}`.
+
+### shuffle
 
 `shuffle(key, items)` produces a deterministic permutation of the supplied
 array. The input array is not mutated. The same `key` and `items` always
@@ -345,11 +338,10 @@ kernel.shuffle("palette", ["slate", "sand", "moss", "ember"])
 // e.g. → ["moss", "ember", "slate", "sand"]  (deterministic for this entropy)
 ```
 
-The result is stored on `PrimitiveField` under an `order-${key}` index.
-Adapters access it as `field["order-palette"]`. Element type is `unknown[]`
+Stored on `PrimitiveField` under `order-${key}`. Element type is `unknown[]`
 at the field level; adapters are responsible for casting to their expected type.
 
-### Sample
+### sample
 
 `sample(key, items, k)` produces a deterministic k-of-n selection without
 replacement. The result is a sub-sequence of `items` of length `k`, drawn in a
@@ -364,12 +356,11 @@ kernel.sample("palette", ["slate", "sand", "moss", "ember", "rust"], 3)
 // e.g. → ["moss", "rust", "slate"]  (deterministic, k draws, no repeats)
 ```
 
-The result is stored on `PrimitiveField` under `order-${key}`, sharing the same
-index type as `shuffle`. Adapters access it as `field["order-palette"]`. The
-distinction between a shuffled and sampled sequence is not preserved at the field
-level — both are ordered arrays of the supplied element type.
+Stored on `PrimitiveField` under `order-${key}`, sharing the same index type as
+`shuffle`. The distinction between a shuffled and sampled sequence is not
+preserved at the field level — both are ordered arrays of the supplied element type.
 
-### Sequence
+### sequence
 
 `sequence(key, n)` produces `n` independent scalars in `[0, 1]`, each
 domain-separated by their position within the keyed expansion.
@@ -388,7 +379,7 @@ kernel.sequence("column-widths", 4)
 Stored on `PrimitiveField` under `seq-${key}`. Each element is a scalar in
 `[0, 1]`; no element is derived from another.
 
-### Partition
+### partition
 
 `partition(key, n)` produces `n` non-negative values summing exactly to `1`.
 The distribution is uniform over the n-simplex (equivalent to a symmetric
@@ -408,7 +399,7 @@ Stored on `PrimitiveField` under `parts-${key}`. Adapters may scale the parts
 by a concrete total (e.g. container width in px) without any further entropy
 reasoning.
 
-### Weighted
+### weighted
 
 `weighted(key, options)` produces a deterministic selection from a finite set
 where each option carries an explicit relative weight. Internally this is a
@@ -433,9 +424,10 @@ under a named index — the output type is adapter-defined and does not fit a
 uniform field slot. Adapters that use `weighted` consume its output directly
 without field indirection.
 
-### Feature Primitive Naming
+### Feature Flag Naming
 
-Feature primitives follow a dual-form convention based on semantic maturity:
+Feature flags produced by `flag(key)` follow a dual-form convention based on
+semantic maturity:
 
 ```
 feature-id  ::= "feature-" ( integer | kebab-slug )
@@ -450,15 +442,123 @@ may map these to OpenType stylistic sets, CSS flags, or any binary surface.
 A sequenced feature matures into a named one; the number is retired, not reused.
 
 **`feature-{slug}`** (e.g. `feature-italic`, `feature-condensed`) — a named
-semantic primitive. The slug is the meaning. Adapters that do not recognize a
-slug must degrade gracefully and ignore it.
+semantic flag. The slug is the meaning. Adapters that do not recognize a slug
+must degrade gracefully and ignore it.
 
 The two forms are syntactically disjoint (a slug must start with a letter) so
 there is no parsing ambiguity. Third-party adapters may define their own named
-features; they do not require upstream registration.
+feature flags without upstream registration.
 
-Adapters must degrade gracefully when a primitive is absent or when the vocabulary
-version predates a primitive's introduction.
+---
+
+## Primitive Vocabulary
+
+Abstract names that carry no rendering assumptions. Adapters are solely responsible
+for interpretation. Names are lowercase kebab-case. The vocabulary is versioned
+alongside the kernel spec.
+
+| Primitive | Type | Range | Semantic Intent |
+|-----------|------|-------|----------------|
+| `density` | scalar | [0, 1] | Mass and weight of visual elements |
+| `expansion` | scalar | [0, 1] | Lateral spread and spatial openness |
+| `curvature` | scalar | [0, 1] | Roundness and organic quality |
+| `contrast` | scalar | [0, 1] | Differential between figure and ground |
+| `grain` | scalar | [0, 1] | Fine-grained micro-variation and texture |
+| `tension` | scalar | [0, 1] | Structural tightness and compression |
+| `symmetry` | scalar | [0, 1] | Axial balance and alignment bias |
+| `phase` | angle | [0, 2π] | Harmonic offset and rotational position |
+
+### Density
+
+`density` is a scalar in `[0, 1]` representing the mass and weight of visual
+elements. Low density suggests lightness, openness, and restraint — thin strokes,
+ample spacing, airy layout. High density suggests heaviness, concentration, and
+presence — thick strokes, tight spacing, saturated surfaces.
+
+Adapters most commonly map `density` to font weight axes (`wght`), stroke width,
+or element mass. It is the single most load-bearing primitive for establishing
+the overall visual character of a projection.
+
+### Expansion
+
+`expansion` is a scalar in `[0, 1]` representing lateral spread and spatial
+openness. Low expansion suggests compression and narrow proportion. High
+expansion suggests width, breadth, and generosity of space.
+
+Adapters typically map `expansion` to font width axes (`wdth`), container
+padding, or horizontal scale. It pairs naturally with `density` — a high-density,
+high-expansion field reads differently than a high-density, low-expansion one.
+
+### Curvature
+
+`curvature` is a scalar in `[0, 1]` representing roundness and organic quality.
+Low curvature produces angular, geometric, and constructed forms. High curvature
+produces rounded, soft, and organic forms.
+
+Adapters map `curvature` to border radius, glyph terminal rounding, corner
+softening, or path smoothing. It is a strong signal of tone — engineered vs
+humanist, cold vs approachable.
+
+### Contrast
+
+`contrast` is a scalar in `[0, 1]` representing the differential between figure
+and ground. Low contrast produces flat, monolithic, minimal distinction between
+elements. High contrast produces sharp differentiation — bold vs light, dark vs
+bright, large vs small.
+
+In typography, `contrast` maps naturally to stroke contrast (the ratio between
+thick and thin strokes). In layout and color, it governs the perceptual pop of
+foreground elements against their background.
+
+### Grain
+
+`grain` is a scalar in `[0, 1]` representing fine-grained micro-variation and
+texture. Low grain is smooth, clean, and homogeneous. High grain is textured,
+noisy, and variable at fine scale.
+
+Grain operates at a different scale than the other primitives — it describes
+character within elements rather than the overall structure of the projection.
+Adapters may use it to control letter-spacing variation, sub-pixel noise,
+texture overlays, or OpenType features like contextual alternates (`calt`).
+
+### Tension
+
+`tension` is a scalar in `[0, 1]` representing structural tightness and
+compression. Low tension is relaxed, loose, and unhurried. High tension is
+compressed, taut, and energetic.
+
+Tension affects the perceived energy of a composition independently of density
+or expansion. A sparse, lightweight layout can still carry high tension through
+tight tracking, compressed spacing ratios, or sharp angular forms. Adapters
+often combine `tension` with `grain` as a signal for micro-typographic
+tightening.
+
+### Symmetry
+
+`symmetry` is a scalar in `[0, 1]` representing axial balance and alignment
+bias. Low symmetry biases toward asymmetric, dynamic, and off-center
+composition. High symmetry biases toward centered, balanced, and formally
+structured arrangement.
+
+Adapters use `symmetry` to govern text alignment (left-biased vs centered),
+layout grid offset, or the degree to which paired elements mirror each other.
+It is not a binary toggle — values between extremes produce graded asymmetric
+tendencies rather than hard alignment rules.
+
+### Phase
+
+`phase` is an angle in `[0, 2π]` representing harmonic offset and rotational
+position. It is the only non-scalar primitive in the named vocabulary, and
+carries a fundamentally different semantic: rather than a linear spectrum between
+two poles, it describes a position within a cycle.
+
+`phase` is most naturally used to select between qualitative states — the
+`self.voice` example in [Derived Primitives](#derived-primitives-self) divides
+the full circle into three equal arcs. It also governs literal rotation (SVG
+elements, gradient angles) and harmonic offset in periodic patterns.
+
+Unlike the scalar primitives, `phase` has no "low is one thing, high is another"
+reading — its meaning is always relational to the cycle being divided.
 
 ### Derived Primitives (`self.*`)
 
@@ -608,4 +708,4 @@ distance research for seed distinguishability guarantees.
 
 ---
 
-*Entropy Projection Framework · Pre-RFC Draft · © contributors*
+*EPF Kernel · Entropy Projection Framework · Pre-RFC Draft · © contributors*
