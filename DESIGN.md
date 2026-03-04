@@ -7,6 +7,26 @@ status: "pre-RFC"
 # Entropy Projection Framework
 
 <!--raw-typst
+// ── Page & typography setup ───────────────────────────────────────────────────
+#set page(paper: "a4", margin: (top: 2.5cm, bottom: 2.5cm, left: 3cm, right: 3cm))
+#set text(font: "Linux Libertine", size: 11pt, lang: "en")
+#set heading(numbering: "1.1.")
+#set par(justify: true, leading: 0.65em)
+#show link: underline
+#show raw.where(block: true): it => block(
+  fill: luma(245),
+  inset: (x: 1em, y: 0.8em),
+  radius: 4pt,
+  width: 100%,
+  it
+)
+#show quote.where(block: true): it => pad(left: 1em, block(
+  stroke: (left: 3pt + luma(180)),
+  inset: (left: 1em, y: 0.4em),
+  it.body
+))
+
+// ── Status badges ─────────────────────────────────────────────────────────────
 #let badge(label, fill-color) = box(
   fill: fill-color,
   radius: 3pt,
@@ -24,6 +44,28 @@ status: "pre-RFC"
 <!--typst-begin-exclude-->
 > **Status:** Pre-RFC Draft · v0.1.0
 > A deterministic entropy → cross-domain design primitive projection engine.
+>
+> **Rendering this document**
+>
+> This file is authored in CommonMark Markdown and renders via
+> [Typst](https://typst.app) +
+> [`cmarker`](https://typst.app/universe/package/cmarker) (v0.1.8+).
+>
+> ```bash
+> brew install typst          # macOS
+> cargo install typst-cli     # Linux/Windows
+> typst compile render.typ
+> ```
+>
+> **render.typ** (place alongside this file):
+> ```typst
+> #import "@preview/cmarker:0.1.8"
+> #cmarker.render(read("DESIGN.md"), h1-level: 1, smart-punctuation: true, raw-typst: true)
+> ```
+>
+> `<!--raw-typst-->` blocks inject native Typst (page setup, styled callouts,
+> the pipeline diagram). `<!--typst-begin-exclude-->` sections are visible here
+> but stripped from the PDF.
 <!--typst-end-exclude-->
 
 A deterministic framework for projecting arbitrary entropy into a stable, cross-domain
@@ -91,6 +133,7 @@ responsibility and a defined interface to the layer below it.
 
 <!--typst-begin-exclude-->
 ```
+── kernel ───────────────────────────────────────────────────────
 Entropy Source          # Arbitrary bytes — hash, signature, ID, seed, timestamp
         ↓
 Entropy Expansion       # HKDF-SHA256 stretch with domain-separated info labels
@@ -98,6 +141,7 @@ Entropy Expansion       # HKDF-SHA256 stretch with domain-separated info labels
 Canonical Normalization # Map to [0,1] scalars, bitfields, angles — clamped
         ↓
 Primitive Field         # Abstract design vocabulary: density, tension, phase…
+── adapter territory ────────────────────────────────────────────
         ↓
 Constraint Mapping      # Per-renderer precision boundaries and quantization
         ↓
@@ -106,6 +150,7 @@ Renderer Adapters       # Translate primitives → font axes, CSS vars, SVG, etc
 Surface Projection      # Apply to medium: text, UI, document, diff, dashboard
         ↓
 Cross-Medium Identity   # Coherent aesthetic fingerprint — reproducible
+─────────────────────────────────────────────────────────────────
 ```
 <!--typst-end-exclude-->
 
@@ -121,7 +166,15 @@ Cross-Medium Identity   # Coherent aesthetic fingerprint — reproducible
   #text(fill: luma(120), size: 8.5pt, style: "italic")[ — #annotation]
 ]
 #let divider = pad(left: 20pt)[#text(fill: luma(190), size: 11pt)[↓]]
+#let boundary(label) = block(
+  width: 100%,
+  inset: (x: 6pt, y: 5pt),
+)[
+  #line(length: 100%, stroke: (paint: luma(180), dash: "dashed"))
+  #text(size: 7.5pt, fill: luma(150), style: "italic")[#label]
+]
 #v(6pt)
+#boundary("── kernel ──────────────────────────────────────────────────")
 #pipe-step("Entropy Source",          "hash · signature · ID · seed · timestamp",          rgb("#7b4fbf"))
 #divider
 #pipe-step("Entropy Expansion",       "HKDF-SHA256 · domain-separated info labels",        rgb("#2d6abf"))
@@ -129,6 +182,7 @@ Cross-Medium Identity   # Coherent aesthetic fingerprint — reproducible
 #pipe-step("Canonical Normalization", "[0,1] scalars · bitfields · angles · clamped",      rgb("#1a8f7a"))
 #divider
 #pipe-step("Primitive Field",         "density · tension · phase · grain · curvature · …", rgb("#239dad"))
+#boundary("── adapter territory ────────────────────────────────────────")
 #divider
 #pipe-step("Constraint Mapping",      "per-renderer quantization · precision bounds",       rgb("#7a7a00"))
 #divider
@@ -166,6 +220,24 @@ interface EntropyKernel {
 
   /** Deterministic boolean */
   flag(key: string): boolean
+
+  /** Deterministic gaussian scalar — mean 0, std 1, clamped to [-1, 1] by default */
+  normal(key: string, mean?: number, std?: number): number
+
+  /** Deterministic permutation of a finite ordered set */
+  shuffle<T>(key: string, items: readonly T[]): T[]
+
+  /** Deterministic k-of-n selection without replacement */
+  sample<T>(key: string, items: readonly T[], k: number): T[]
+
+  /** Deterministic array of n independent scalars in [0, 1] */
+  sequence(key: string, n: number): number[]
+
+  /** Deterministic partition into n parts summing to 1 */
+  partition(key: string, n: number): number[]
+
+  /** Deterministic weighted selection from a finite ordered set */
+  weighted<T>(key: string, options: readonly { value: T; weight: number }[]): T
 }
 
 /** Primary constructor */
@@ -186,6 +258,32 @@ material with an empty salt. Non-cryptographic seeds like `"acme-corp"` or
 `user.id` are valid first-class inputs. Callers requiring cryptographic strength
 are responsible for providing high-entropy bytes upstream.
 
+### PrimitiveField
+
+The concrete typed output of the kernel after canonical normalization. This is
+the stable value passed to every adapter and `self.*` derivation.
+
+```typescript
+interface PrimitiveField {
+  density:   number   // scalar [0, 1]
+  expansion: number   // scalar [0, 1]
+  curvature: number   // scalar [0, 1]
+  contrast:  number   // scalar [0, 1]
+  grain:     number   // scalar [0, 1]
+  tension:   number   // scalar [0, 1]
+  symmetry:  number   // scalar [0, 1]
+  phase:     number   // angle  [0, 2π]
+  [key: `feature-${string}`]: boolean   // all feature flags, named or sequenced
+  [key: `normal-${string}`]:  number    // gaussian scalar, clamped [-1, 1]
+  [key: `order-${string}`]:   unknown[] // shuffled or sampled sequence
+  [key: `seq-${string}`]:     number[]  // n independent scalars in [0, 1]
+  [key: `parts-${string}`]:   number[]  // n parts summing to 1
+}
+```
+
+`PrimitiveField` is closed over raw entropy — it contains only normalized,
+clamped values. No kernel method is accessible from within it.
+
 ---
 
 ## Primitive Vocabulary
@@ -204,12 +302,189 @@ alongside the kernel spec.
 | `tension` | scalar | [0, 1] | Structural tightness and compression |
 | `symmetry` | scalar | [0, 1] | Axial balance and alignment bias |
 | `phase` | angle | [0, 2π] | Harmonic offset and rotational position |
-| `feature-a` | flag | bool | Binary stylistic toggle — slot A |
-| `feature-b` | flag | bool | Binary stylistic toggle — slot B |
-| `feature-c` | flag | bool | Binary stylistic toggle — slot C |
+| `feature-*` | flag | bool | Binary toggle — sequenced (`feature-1`) or named (`feature-italic`) |
+| `normal-offset` | normal | [-1, 1] | Gaussian-distributed lateral or baseline offset |
+| `normal-weight` | normal | [-1, 1] | Gaussian-distributed weight deviation from center |
+| `seq-*` | sequence | number[] ∈ [0,1] | n independent domain-separated scalars under one key |
+| `parts-*` | partition | number[] summing to 1 | n parts for proportional layout and distribution |
+| `order-*` | shuffle / sample | unknown[] | Full permutation or k-of-n selection without replacement |
+
+`order-*` entries are not listed in the vocabulary table as their element type
+and length are adapter-defined. See [Shuffle](#shuffle) below.
+
+### Normal
+
+`normal(key, mean?, std?)` produces a gaussian-distributed scalar. The default
+distribution is mean `0`, std `1`, clamped to `[-1, 1]`. Callers may supply
+`mean` and `std` to shift and scale the distribution before clamping.
+
+This is not derivable as a `self.*` primitive — gaussian output requires a
+different draw from the expanded keystream, not a transformation of an existing
+uniform scalar. A uniform-to-gaussian conversion (Box-Muller, etc.) applied to
+a field value would distort the distribution and break domain separation.
+
+```typescript
+kernel.normal("offset")           // N(0, 1) clamped to [-1, 1]
+kernel.normal("weight", 0, 0.5)   // N(0, 0.5) — tighter distribution
+kernel.normal("shift", 0.2, 0.3)  // N(0.2, 0.3) — shifted center
+```
+
+### Shuffle
+
+`shuffle(key, items)` produces a deterministic permutation of the supplied
+array. The input array is not mutated. The same `key` and `items` always
+produce the same ordering.
+
+This is not derivable as a `self.*` primitive — generating a permutation
+requires as many independent draws as there are elements. Deriving it from
+existing field values would require manual sub-key schemes and would not be
+domain-separated by the spec.
+
+```typescript
+kernel.shuffle("palette", ["slate", "sand", "moss", "ember"])
+// e.g. → ["moss", "ember", "slate", "sand"]  (deterministic for this entropy)
+```
+
+The result is stored on `PrimitiveField` under an `order-${key}` index.
+Adapters access it as `field["order-palette"]`. Element type is `unknown[]`
+at the field level; adapters are responsible for casting to their expected type.
+
+### Sample
+
+`sample(key, items, k)` produces a deterministic k-of-n selection without
+replacement. The result is a sub-sequence of `items` of length `k`, drawn in a
+single keyed operation.
+
+This is distinct from `shuffle` + slice: `shuffle` draws entropy proportional to
+`n` regardless of `k`. For large `items` with small `k`, that wastes entropy and
+is semantically misleading — the intent is selection, not ordering.
+
+```typescript
+kernel.sample("palette", ["slate", "sand", "moss", "ember", "rust"], 3)
+// e.g. → ["moss", "rust", "slate"]  (deterministic, k draws, no repeats)
+```
+
+The result is stored on `PrimitiveField` under `order-${key}`, sharing the same
+index type as `shuffle`. Adapters access it as `field["order-palette"]`. The
+distinction between a shuffled and sampled sequence is not preserved at the field
+level — both are ordered arrays of the supplied element type.
+
+### Sequence
+
+`sequence(key, n)` produces `n` independent scalars in `[0, 1]`, each
+domain-separated by their position within the keyed expansion.
+
+The canonical use case is any adapter that needs multiple independent draws under
+a shared semantic label — `n` column widths, `n` opacity stops, `n` offsets —
+without inventing a sub-key scheme. Callers who write `scalar("x-0")`,
+`scalar("x-1")`, `scalar("x-2")` are approximating this; the approximation is
+fragile because sub-key naming is not part of the spec.
+
+```typescript
+kernel.sequence("column-widths", 4)
+// e.g. → [0.61, 0.28, 0.74, 0.43]  (4 independent draws, domain-separated)
+```
+
+Stored on `PrimitiveField` under `seq-${key}`. Each element is a scalar in
+`[0, 1]`; no element is derived from another.
+
+### Partition
+
+`partition(key, n)` produces `n` non-negative values summing exactly to `1`.
+The distribution is uniform over the n-simplex (equivalent to a symmetric
+Dirichlet draw), implemented as n-1 independent draws + normalization.
+
+This is not derivable from `sequence` without reintroducing the normalization
+step at the adapter layer, which would require the adapter to reason about
+entropy rather than primitives — a layering violation. The "sums to 1" guarantee
+is a contract, not a convenience.
+
+```typescript
+kernel.partition("columns", 3)
+// e.g. → [0.412, 0.231, 0.357]  (sum = 1.0, deterministic)
+```
+
+Stored on `PrimitiveField` under `parts-${key}`. Adapters may scale the parts
+by a concrete total (e.g. container width in px) without any further entropy
+reasoning.
+
+### Weighted
+
+`weighted(key, options)` produces a deterministic selection from a finite set
+where each option carries an explicit relative weight. Internally this is a
+single scalar draw mapped against the cumulative weight distribution.
+
+`pick` is uniform categorical selection — `weighted` is the non-uniform
+generalization. Requiring callers to expand weights manually (repeating entries
+to approximate a distribution) is a lossy encoding that loses precision and
+obscures intent.
+
+```typescript
+kernel.weighted("style", [
+  { value: "regular",   weight: 6 },
+  { value: "medium",    weight: 3 },
+  { value: "bold",      weight: 1 },
+])
+// e.g. → "regular"  (60% probability mass, deterministic for this entropy)
+```
+
+The result is a single selected value. It is not stored on `PrimitiveField`
+under a named index — the output type is adapter-defined and does not fit a
+uniform field slot. Adapters that use `weighted` consume its output directly
+without field indirection.
+
+### Feature Primitive Naming
+
+Feature primitives follow a dual-form convention based on semantic maturity:
+
+```
+feature-id  ::= "feature-" ( integer | kebab-slug )
+
+integer     ::= [1-9][0-9]*        # sequenced, unspecified — planned/unknown
+kebab-slug  ::= [a-z][a-z0-9-]*   # named, semantic — implemented/understood
+```
+
+**`feature-{n}`** (e.g. `feature-1`, `feature-2`) — a reserved slot whose
+meaning is not yet specified. Numeric identity is the only contract. Adapters
+may map these to OpenType stylistic sets, CSS flags, or any binary surface.
+A sequenced feature matures into a named one; the number is retired, not reused.
+
+**`feature-{slug}`** (e.g. `feature-italic`, `feature-condensed`) — a named
+semantic primitive. The slug is the meaning. Adapters that do not recognize a
+slug must degrade gracefully and ignore it.
+
+The two forms are syntactically disjoint (a slug must start with a letter) so
+there is no parsing ambiguity. Third-party adapters may define their own named
+features; they do not require upstream registration.
 
 Adapters must degrade gracefully when a primitive is absent or when the vocabulary
 version predates a primitive's introduction.
+
+### Derived Primitives (`self.*`)
+
+Any implementation may define additional primitives of the form `self.<semantic>`,
+where `<semantic>` is a lowercase kebab-slug naming what the primitive means.
+
+A `self.*` primitive must be a **pure function of `PrimitiveField`** — it may
+not introduce new entropy, access external state, or produce side effects. Its
+provenance is the field itself: same entropy, same field, same derived value.
+This is the constraint that prevents arbitrary extension from dissolving into
+noise.
+
+```typescript
+type SelfPrimitive = (field: PrimitiveField) => unknown
+
+// examples — the function body is the proof of provenance:
+self.warmth    = (f) => f.density * (1 - f.tension) + f.curvature * 0.3
+self.agitation = (f) => f.tension * f.grain
+self.voice     = (f) => f.phase < 2.09 ? "assertive"   // [0, 2π/3)
+                      : f.phase < 4.19 ? "quiet"        // [2π/3, 4π/3)
+                      : "considered"                     // [4π/3, 2π]
+```
+
+The name is a semantic claim. The derivation is the justification. Both are
+required — a `self.*` primitive with no derivation is not a primitive, it is
+an assertion.
 
 ---
 
@@ -233,9 +508,14 @@ const cssAdapter: Adapter<Record<string, string>> = (field) => ({
   "--epf-font-width":     lerp(85, 115, field.expansion).toFixed(1) + "%",
   "--epf-border-radius":  lerp(0, 16, field.curvature).toFixed(1) + "px",
   "--epf-letter-spacing": lerp(-0.02, 0.08, field.grain).toFixed(3) + "em",
-  "--epf-font-style":     field["feature-a"] ? "italic" : "normal",
+  "--epf-font-style":     field["feature-1"] ? "italic" : "normal",
 })
 ```
+
+A named feature flag such as `field["feature-italic"]` is equally valid once
+the vocabulary entry exists — named and sequenced flags share the same
+`feature-${string}` index type on `PrimitiveField` and are populated by
+`kernel.flag(name)` during field construction.
 
 ### Example: OpenType Variable Font
 
@@ -246,9 +526,9 @@ const opentypeAdapter: Adapter<OpenTypeSettings> = (field) => ({
     wdth: lerp(75, 125, field.expansion),
   },
   featureSettings: {
-    "ss01": field["feature-a"],
-    "ss02": field["feature-b"],
-    "ss03": field["feature-c"],
+    "ss01": field["feature-1"],
+    "ss02": field["feature-2"],
+    "ss03": field["feature-3"],
     "calt": field.tension > 0.5,
     "zero": field.grain > 0.5,
   },
@@ -268,9 +548,12 @@ Any conforming implementation must reproduce these values within stated toleranc
 |-----|--------|----------------|
 | `"density"` | `scalar` | TBD ±0.0001 |
 | `"phase"` | `angle` | TBD ±0.0001 |
-| `"feature-a"` | `flag` | TBD |
-| `"feature-b"` | `flag` | TBD |
+| `"feature-1"` | `flag` | TBD |
+| `"feature-2"` | `flag` | TBD |
 | `"grain"` | `scalar` | TBD ±0.0001 |
+| `"cols"` | `sequence(3)` | TBD[3] ±0.0001 each |
+| `"layout"` | `partition(3)` | TBD[3], sum = 1.0 ±0.0001 |
+| `"palette"` | `sample(items, 2)` | TBD[2] (deterministic pair) |
 
 <!--raw-typst
 #v(6pt)
